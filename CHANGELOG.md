@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [4.9.0] - 2026-10-05
+
+### Added
+- **Installable app (PWA):** add to your home screen or install from the browser. Includes a web app manifest, home-screen icons and a service worker.
+- **Offline start:** the app opens without a connection. Local Folder sync works offline; cloud changes made offline are sent when you reconnect.
+- **Update prompt:** when a new version is ready, an **Update** button appears instead of changing the app under you.
+
 ## [4.8.0] - 2026-10-05
 
 ### Added

@@ -12,7 +12,13 @@
     })();
     </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>to-do-txt v4.8.0</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="to-do-txt">
+    <link rel="icon" type="image/png" sizes="64x64" href="assets/todo_txt_icon_64x64.png">
+    <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+    <title>to-do-txt v4.9.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/dropbox/dist/Dropbox-sdk.min.js"></script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -236,7 +242,7 @@
             </div>
             <div class="p-6 border-t border-gray-800 bg-black/20">
                 <div class="flex justify-between items-center">
-                    <span class="text-[9px] font-black uppercase opacity-40">v4.8.0 | <a href="https://github.com/to-do-txt/to-do-txt" target="_blank" class="hover:text-blue-500">GitHub</a></span>
+                    <span class="text-[9px] font-black uppercase opacity-40">v4.9.0 | <a href="https://github.com/to-do-txt/to-do-txt" target="_blank" class="hover:text-blue-500">GitHub</a></span>
                     <button onclick="hardLogout()" class="px-4 py-1 border border-red-900/50 text-red-500 text-[10px] font-black uppercase rounded">Logout</button>
                 </div>
             </div>
@@ -1575,6 +1581,39 @@
             try { await idbSet('dir', null); } catch (e) { /* ignore */ }
             localStorage.clear();
             location.reload();
+        }
+
+        // ---- Offline support (service worker) ----
+        function showUpdateBanner(reg) {
+            if (document.getElementById('updateBanner')) return;
+            const bar = document.createElement('div');
+            bar.id = 'updateBanner';
+            bar.className = 'fixed bottom-4 left-1/2 -translate-x-1/2 z-[1600] flex items-center gap-3 card-bg border rounded-lg shadow-xl px-4 py-3 text-sm';
+            bar.innerHTML = '<span>A new version is ready.</span>';
+            const btn = document.createElement('button');
+            btn.className = 'btn-toggle active px-3 py-1';
+            btn.textContent = 'Update';
+            btn.onclick = () => { if (reg.waiting) reg.waiting.postMessage('SKIP_WAITING'); };
+            bar.appendChild(btn);
+            document.body.appendChild(bar);
+        }
+
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').then((reg) => {
+                if (reg.waiting && navigator.serviceWorker.controller) showUpdateBanner(reg);
+                reg.addEventListener('updatefound', () => {
+                    const worker = reg.installing;
+                    worker.addEventListener('statechange', () => {
+                        if (worker.state === 'installed' && navigator.serviceWorker.controller) showUpdateBanner(reg);
+                    });
+                });
+            }).catch((e) => console.error('Service worker registration failed:', e));
+
+            // Reload once the new version takes control. Unsaved edits are restored from localStorage.
+            let reloading = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (!reloading) { reloading = true; location.reload(); }
+            });
         }
 
         init();
