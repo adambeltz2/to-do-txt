@@ -4,7 +4,7 @@ A minimalist, privacy-focused Task Manager built entirely around the standard [t
 
 ## ✨ Features
 
-* **Two Sync Backends:** Choose **Dropbox** for access across devices, or **Local Folder** to keep everything on-device via the browser's File System Access API. Switch between them anytime from the sidebar.
+* **Three Sync Backends:** Choose **Dropbox** or **Google Drive** for access across devices, or **Local Folder** to keep everything on-device via the browser's File System Access API. Switch between them anytime from the sidebar.
 * **Multi-Project File Manager:** Create, swap, and manage isolated list files (e.g., `todo.txt`, `WORK`, `PERSONAL`) directly from the Registry sidebar without cluttering a single workspace.
 * **Date & Priority Dashboards:** Fluidly parse, cross-filter, and track tasks via unified sidebar blocks categorized by:
   * **Date Category** (Overdue, Today, Upcoming, No Due Date)
@@ -78,6 +78,17 @@ By default, this app uses a shared Client ID for Dropbox. If you want to host th
 4. **Update Code:** Copy your generated **Client ID** string and substitute the `CLIENT_ID` constant parameter sitting at the top of your `index.html`.
 
 Local Folder sync needs no configuration or Client ID — it's entirely client-side.
+
+## ☁️ Google Drive setup
+
+Google Drive sync needs an OAuth client ID for the page's origin. The app asks only for the `drive.file` scope, so it can see just the `todo*.txt` files it creates itself, and Google doesn't require app verification for that scope.
+
+1. In the [Google Cloud Console](https://console.cloud.google.com/), create a project and enable the **Google Drive API**.
+2. Configure the **OAuth consent screen** (External, add yourself as a test user while the app is in testing).
+3. Create an **OAuth client ID** of type **Web application**. Under **Authorized JavaScript origins**, add the origin the app is served from, e.g. `https://to-do-txt.github.io` (and `http://localhost:8000` for local testing).
+4. Replace the `GDRIVE_CLIENT_ID` constant near the top of `index.html` with your client ID.
+
+Limitations: Google Drive access is granted per file the app created, so files you made by hand in Drive won't appear. Google sign-in tokens last about an hour; the app renews them silently where Google allows, otherwise tap **Connect Google Drive**.
 
 ## 💡 Pro Tips
 
