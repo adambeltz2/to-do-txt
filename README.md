@@ -1,6 +1,6 @@
 # to-do-txt
 
-A minimalist, privacy-focused Task Manager built entirely around the standard [todo.txt](http://todotxt.org/) format. This is a single-file Progressive Web App (PWA) that syncs directly with your personal Dropbox **or** a folder on your own device — no server, no account required for the local option.
+A minimalist, privacy-focused Task Manager built entirely around the standard [todo.txt](http://todotxt.org/) format. This is a single-file Progressive Web App (PWA) that syncs directly with your personal Dropbox or Google Drive **or** a folder on your own device — no server, no account required for the local option.
 
 ## ✨ Features
 
@@ -16,9 +16,9 @@ A minimalist, privacy-focused Task Manager built entirely around the standard [t
 * **Inline Auto-complete:** Smart tag recommendations drop down in real-time as you type a `+Project` or `@Context` tag—fully integrated into both the **Main Input** field and the **Inline Task Editor**. Supports `Tab` key completion.
 * **Task Insertion Placement Control:** Choose whether new items land exactly where you want them with a dedicated **"Add to Top"** insertion state configuration toggle.
 * **Structural Spacing "Sweep":** Reorganize files cleanly with a single click using **"Sweep Done"**. This engine groups completed (`x `) lines together and drops them at the bottom of the file, cleanly anchoring empty line splits and headers right where you left them.
-* **Full Sync & Offline Ready:** Instantly saves to Dropbox or your local folder with granular syncing state cues. Installable as an offline-compatible app on iOS, Android, or Desktop.
+* **Conflict-Safe Sync & Offline Ready:** Saves to Dropbox, Google Drive or your local folder. If another device saved first, edits are merged line by line instead of overwritten. Edits made offline are kept and sent when you reconnect. Installable as an offline-compatible app on iOS, Android, or Desktop.
+* **Clean Header:** Sort, filters and tools live in one **View** menu, so the task list stays in focus.
 * **Raw Editor:** Quick access to bulk-edit or parse your entire plain text stream manually.
-* **Notifications (Optional):** Get pinged via [ntfy](https://ntfy.sh) or a webhook of your choice when a task is overdue, due today, or due tomorrow. Off by default — see [Notifications](#-notifications) below.
 
 ## 🚀 Getting Started
 
@@ -27,6 +27,7 @@ The first time you launch the app, it won't assume anything — you'll be asked 
 1. **Launch:** [Visit the App Here](https://to-do-txt.github.io/to-do-txt/)
 2. **Choose a Sync Method:**
    * **Connect Dropbox** — authorizes the app and initializes a secure directory named `/Apps/to-do-txt/` inside your Dropbox containing your project base `.txt` files.
+   * **Connect Google Drive** — signs you in with Google and keeps your files in a `to-do-txt` folder in My Drive. It only sees files the app creates. Needs a client ID; see **Google Drive setup** below.
    * **Connect Local Folder** — opens your browser's native folder picker so you can point the app at any folder on your device. Requires Chrome, Edge, or another Chromium-based browser (see [Local Folder Sync](#-local-folder-sync) below).
 3. **Sync:** Start typing. Your choice is remembered for next time via `localStorage`, so you won't be asked again unless you disconnect or log out.
 
@@ -37,10 +38,11 @@ You can switch backends at any point from the **Sync** section in the sidebar.
 This app is **completely serverless**. It executes in memory in your local browser sandbox and talks directly to whichever backend you choose — no intermediate server ever sees your data.
 
 * **Dropbox mode:** Interfaces via atomic Dropbox API calls. Your data is saved natively as standard text files (e.g., `/Apps/to-do-txt/todo.txt`).
+* **Google Drive mode:** Stores the same `todo*.txt` files in a `to-do-txt` folder in My Drive, using the `drive.file` scope so the app only sees files it creates.
+* **Conflicts:** Every save says which version it was based on. If another device changed the file first, the app merges the two versions line by line. Unsaved edits are kept on the device until they reach the cloud.
 * **Local Folder mode:** Interfaces via the browser's [File System Access API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API), reading and writing `todo*.txt` files directly in a folder you select — nothing ever leaves your device.
 * **Privacy First:** Zero data telemetry or intermediate servers, in either mode. Your credentials, project layouts, and text streams remain strictly between your browser runtime and the backend you chose.
 * **Format:** Strict adherence to the standard [todo.txt format spec](https://github.com/todotxt/todo.txt) ensures seamless portability with third-party text streams.
-* **Notification settings:** If enabled, stored as a single `.notify.json` file alongside your `todo*.txt` files, using the same backend and same privacy model — no separate server, no third-party account required beyond whatever ntfy topic or webhook URL you choose to use.
 
 ## 💻 Local Folder Sync
 
@@ -51,17 +53,6 @@ An alternative to Dropbox for anyone who'd rather keep tasks fully on-device (or
 * **Permissions:** The browser remembers the folder you granted access to, but for security reasons it may need you to tap **Reconnect Folder** after a browser restart to re-confirm write access. This is a browser-level restriction, not a bug.
 * **No live file-watching:** Like Dropbox mode, the app polls every 30 seconds rather than reacting instantly to external changes. If you edit the file directly in a text editor while the app is open, give it a moment to catch up.
 * **Disconnecting:** Use **Disconnect Folder** in the sidebar to forget the folder and fall back to choosing a sync method again.
-
-## 🔔 Notifications
-
-Optional and off by default. Get pinged when a task is overdue, due today, or due tomorrow — no account or server of ours required.
-
-* **ntfy:** Point at the free, no-signup [ntfy.sh](https://ntfy.sh) service (or your own self-hosted ntfy instance) with a topic name of your choosing. Use the 🎲 button in the Notifications sidebar section to generate a random, hard-to-guess topic, then subscribe to it in the [ntfy app](https://ntfy.sh/app) (iOS/Android) or a browser tab at `https://ntfy.sh/<your-topic>`.
-* **Webhook:** Posts a JSON payload (`title`, `message`, `task`, `trigger`, `file`, `timestamp`) to any URL you provide — wire it into n8n, Zapier, Make, EmailJS, Discord, or anything else that can turn a webhook into an email or push notification.
-* **Email Digest (manual):** Since the app is serverless, it can't send email on its own behalf. Instead, a **Generate Email** button builds a formatted plain-text digest of matching tasks (grouped by Overdue / Due Today / Due Tomorrow / No Due Date) and opens it as a pre-filled draft via `mailto:` in your device's default mail app — you review and hit send yourself. A **Copy Text** button is available as a fallback if your device has no default mail app configured (e.g. many desktop setups, or webmail-only users).
-* **Where it lives:** Settings sync as `.notify.json` alongside your task files via whichever backend (Dropbox or Local Folder) you've already connected. Nothing is sent anywhere until you enable it and hit **Save**.
-* **When it checks:** Notification triggers are evaluated on the same 30-second poll used for task sync — no separate background process. Each task+trigger+date only fires once; the app forgets it automatically once the task is completed, deleted, or no longer matches.
-* **Test first:** Use the **Send Test** button in the sidebar to confirm your ntfy topic or webhook URL is working before relying on it.
 
 ---
 
@@ -93,7 +84,7 @@ Limitations: Google Drive access is granted per file the app created, so files y
 ## 💡 Pro Tips
 
 * **Clean Links:** Typing `link:https://google.com` inside a row hides the lengthy raw text line and formats a clean, clickable, bold **link ↗** button that opens safely inside a secondary browser tab.
-* **Mobile App Integration:** For mobile workflows (iOS or Android Safari/Chrome), select **"Add to Home Screen"** to eliminate browser wrapping bars and run **to-do-txt** as an immersive standalone application shell. Note: Local Folder sync isn't available on iOS/Android browsers today — use Dropbox mode for mobile.
+* **Mobile App Integration:** For mobile workflows (iOS or Android Safari/Chrome), select **"Add to Home Screen"** to eliminate browser wrapping bars and run **to-do-txt** as an immersive standalone application shell. Note: Local Folder sync isn't available on iOS/Android browsers today — use Dropbox or Google Drive for mobile.
 * **Keyboard Navigation:** While interacting with auto-complete containers inside input nodes, click or hit `Tab ⇥` to fast-track keyword tag strings.
 * **Switching Backends Mid-Project:** Moving from Dropbox to Local Folder (or back) doesn't migrate your files automatically — use the **Backup** button first if you want a copy of your current task list to bring along.
 
@@ -101,4 +92,4 @@ Limitations: Google Drive access is granted per file the app created, so files y
 
 This project is licensed under the terms of the **MIT License**.
 
-**Disclaimer:** This utility is provided "as is" for personal use. The developer assumes no liability for local network data loss, Dropbox API interruptions, or text layout anomalies. Maintain safe backups of your active data streams using the integrated single-click **Backup** download routine regularly.
+**Disclaimer:** This utility is provided "as is" for personal use. The developer assumes no liability for local network data loss, Dropbox or Google Drive API interruptions, or text layout anomalies. Maintain safe backups of your active data streams using the integrated single-click **Backup** download routine regularly.
