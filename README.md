@@ -18,6 +18,7 @@ A minimalist, privacy-focused Task Manager built entirely around the standard [t
 * **Structural Spacing "Sweep":** Reorganize files cleanly with a single click using **"Sweep Done"**. This engine groups completed (`x `) lines together and drops them at the bottom of the file, cleanly anchoring empty line splits and headers right where you left them.
 * **Conflict-Safe Sync & Offline Ready:** Saves to Dropbox, Google Drive or your local folder. If another device saved first, edits are merged line by line instead of overwritten. Edits made offline are kept and sent when you reconnect. Installable as an offline-compatible app on iOS, Android, or Desktop.
 * **Clean Header:** Sort, filters and tools live in one **View** menu, so the task list stays in focus.
+* **Built-in Help:** Click the **?** button for a quick guide to priorities, projects, contexts and due dates.
 * **Raw Editor:** Quick access to bulk-edit or parse your entire plain text stream manually.
 
 ## 🚀 Getting Started
