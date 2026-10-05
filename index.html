@@ -15,6 +15,7 @@
     <title>to-do-txt v4.6.0</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/dropbox/dist/Dropbox-sdk.min.js"></script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
     <style>
         :root {
             --bg-app: #121212; --bg-card: #1e1e1e; --bg-input: #0a0a0a; --text-main: #e5e7eb; --text-muted: #9ca3af; --border: #333;
@@ -194,10 +195,12 @@
                     <h2 class="text-[10px] font-black text-gray-500 mb-4 uppercase tracking-widest">Sync</h2>
                     <div class="flex gap-1 mb-2">
                         <button onclick="setSyncMode('dropbox')" id="modeBtnDropbox" class="flex-1 btn-toggle">Dropbox</button>
+                        <button onclick="setSyncMode('gdrive')" id="modeBtnGdrive" class="flex-1 btn-toggle">Google Drive</button>
                         <button onclick="setSyncMode('local')" id="modeBtnLocal" class="flex-1 btn-toggle" title="Chrome/Edge only">Local Folder</button>
                     </div>
                     <button onclick="connectLocalFolder()" id="connectLocalBtn" class="hidden w-full text-[10px] font-black bg-blue-600/10 border border-blue-500/30 text-blue-400 py-2 rounded uppercase hover:bg-blue-600/20 transition-all mb-1">Connect Folder</button>
                     <button onclick="disconnectLocal()" id="disconnectLocalBtn" class="hidden w-full text-[10px] font-black border border-red-900/50 text-red-500 py-2 rounded uppercase">Disconnect Folder</button>
+                    <button onclick="connectGdrive(true)" id="connectGdriveBtn" class="hidden w-full text-[10px] font-black bg-blue-600/10 border border-blue-500/30 text-blue-400 py-2 rounded uppercase hover:bg-blue-600/20 transition-all mb-1">Connect Google Drive</button>
                     <p id="syncModeHint" class="text-[9px] opacity-40 mt-2 leading-tight"></p>
                 </section>
                 <section>
@@ -251,6 +254,8 @@
     <script>
         const CLIENT_ID = 'aqxrpwdf3f2l9hx';
         const REDIRECT_URI = 'https://to-do-txt.github.io/to-do-txt/';
+        // Google Drive OAuth client ID (type: Web application). Setup steps: README, "Google Drive setup".
+        const GDRIVE_CLIENT_ID = '924276497483-9gmr13o07lii6h8idv0sf2s50a5vim2p.apps.googleusercontent.com';
 
         let dbx, allTasks = [], activeFilters = new Set(), isSyncing = false, showHeaders = true, editingBulk = false, editingIndex = null, sortAscending = true;
         let addToTop = localStorage.getItem('add_to_top') === 'true';
@@ -291,6 +296,9 @@
                     hideAutocomplete('inlineAutocompleteDropdown');
                 }
             });
+            // Retry unsaved changes and pick up other devices' edits when the connection or tab comes back
+            window.addEventListener('online', () => { if (isRemoteMode()) { flushRemote(); loadRemote(); } });
+            document.addEventListener('visibilitychange', () => { if (!document.hidden && isRemoteMode()) loadRemote(); });
 
             if (!syncMode) {
                 showSyncChooser();
@@ -305,25 +313,32 @@
                     updateFileUI();
                     startPolling();
                 }
-                return; 
+                return;
             }
 
-            // --- Dropbox flow ---
-            const urlParams = new URLSearchParams(window.location.hash.substring(1));
-            const token = urlParams.get('access_token') || localStorage.getItem('dbx_token');
-
-            if (token) { 
+            restoreSyncState();
+            if (syncMode === 'dropbox') {
+                const urlParams = new URLSearchParams(window.location.hash.substring(1));
+                const token = urlParams.get('access_token') || localStorage.getItem('dbx_token');
+                if (!token) { handleAuth(); return; }
                 localStorage.setItem('dbx_token', token);
                 if (window.location.hash) history.replaceState(null, null, window.location.pathname);
-                
-                dbx = new Dropbox.Dropbox({ accessToken: token }); 
-                await scanDropboxFiles();
-                await loadTasks(); 
-                updateFileUI(); 
-                startPolling();
-            } else { 
-                handleAuth(); 
+                dbx = new Dropbox.Dropbox({ accessToken: token });
+            } else {
+                await connectGdrive(false);
             }
+            await activateRemote();
+        }
+
+        // Shared by startup and switching to a remote backend
+        async function activateRemote() {
+            updateSyncModeUI();
+            if (!adapters[syncMode].ready()) return;
+            await scanRemoteFiles();
+            await flushRemote();
+            await loadRemote();
+            updateFileUI();
+            startPolling();
         }
 
         function showSyncChooser() {
@@ -334,6 +349,7 @@
                     <div class="text-xs opacity-50">You can change this later from the Sync section in the sidebar.</div>
                     <div class="flex flex-col gap-2 mt-6">
                         <button onclick="setSyncMode('dropbox')" class="bg-blue-600 hover:bg-blue-700 text-white text-xs font-black uppercase tracking-widest py-3 rounded-lg">Connect Dropbox</button>
+                        <button onclick="setSyncMode('gdrive')" class="border border-blue-500/30 text-blue-400 text-xs font-black uppercase tracking-widest py-3 rounded-lg">Connect Google Drive</button>
                         <button onclick="setSyncMode('local')" ${HAS_FS_ACCESS ? '' : 'disabled'} class="border border-blue-500/30 text-blue-400 text-xs font-black uppercase tracking-widest py-3 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed">
                             Connect Local Folder ${HAS_FS_ACCESS ? '' : '(needs Chrome/Edge)'}
                         </button>
@@ -344,7 +360,11 @@
 
         function startPolling() {
             if (pollInterval) clearInterval(pollInterval);
-            pollInterval = setInterval(loadTasks, 30000);
+            pollInterval = setInterval(() => {
+                if (syncMode === 'gdrive' && !gToken) connectGdrive(false);
+                if (isRemoteMode()) { persistSync(); flushRemote(); }
+                loadTasks();
+            }, 30000);
         }
 
         function toggleSortDirection() {
@@ -357,12 +377,12 @@
         async function loadTasks() {
             if (isSyncing || editingBulk || editingIndex !== null) return;
             if (syncMode === 'local') return loadTasksLocal();
-            return loadTasksDropbox();
+            return loadRemote();
         }
 
         async function saveTasks() {
             if (syncMode === 'local') return saveTasksLocal();
-            return saveTasksDropbox();
+            return saveRemote();
         }
 
         async function setSyncMode(mode) {
@@ -371,12 +391,14 @@
                 return;
             }
             if (mode === 'local' && !HAS_FS_ACCESS) {
-                alert('Local Folder sync needs the File System Access API, available in Chrome, Edge, or other Chromium-based browsers. Staying on Dropbox.');
+                alert('Local Folder sync needs the File System Access API, available in Chrome, Edge, or other Chromium-based browsers. Staying on the current sync method.');
                 return;
             }
             if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
             syncMode = mode;
             localStorage.setItem('sync_mode', mode);
+            allTasks = [];   // the list still belongs to the previous backend until the new one loads
+            render();
             updateSyncModeUI();
 
             if (mode === 'local') {
@@ -391,30 +413,33 @@
                 } else {
                     await connectLocalFolder();
                 }
-            } else {
+            } else if (mode === 'dropbox') {
                 const token = localStorage.getItem('dbx_token');
-                if (token) {
-                    dbx = new Dropbox.Dropbox({ accessToken: token });
-                    await scanDropboxFiles();
-                    await loadTasks();
-                    updateFileUI();
-                    startPolling();
-                } else {
-                    handleAuth();
-                }
+                if (!token) { handleAuth(); return; }
+                dbx = new Dropbox.Dropbox({ accessToken: token });
+                await activateRemote();
+            } else {
+                await connectGdrive(false);
+                await activateRemote();
             }
         }
 
         function updateSyncModeUI() {
             const dropboxBtn = document.getElementById('modeBtnDropbox');
+            const gdriveBtn = document.getElementById('modeBtnGdrive');
             const localBtn = document.getElementById('modeBtnLocal');
             const connectBtn = document.getElementById('connectLocalBtn');
             const disconnectBtn = document.getElementById('disconnectLocalBtn');
+            const gdriveConnectBtn = document.getElementById('connectGdriveBtn');
             const hint = document.getElementById('syncModeHint');
 
             dropboxBtn.classList.toggle('active', syncMode === 'dropbox');
+            gdriveBtn.classList.toggle('active', syncMode === 'gdrive');
             localBtn.classList.toggle('active', syncMode === 'local');
             localBtn.disabled = !HAS_FS_ACCESS;
+
+            const gdriveNeedsLogin = syncMode === 'gdrive' && !gToken;
+            gdriveConnectBtn.classList.toggle('hidden', !gdriveNeedsLogin);
 
             if (syncMode === 'local') {
                 if (localDirHandle) {
@@ -430,7 +455,13 @@
             } else {
                 connectBtn.classList.add('hidden');
                 disconnectBtn.classList.add('hidden');
-                hint.innerText = '';
+                if (syncMode === 'gdrive') {
+                    hint.innerText = gdriveNeedsLogin
+                        ? 'Not connected. Tap Connect Google Drive.'
+                        : 'Reading/writing todo*.txt files in your Google Drive (files this app creates).';
+                } else {
+                    hint.innerText = '';
+                }
             }
         }
 
@@ -599,72 +630,376 @@
             } finally { isSyncing = false; }
         }
 
-        async function scanDropboxFiles() {
-            if (!dbx) return;
-            try {
-                const res = await dbx.filesListFolder({ path: '' });
-                const foundFiles = res.result.entries
-                    .filter(entry => entry['.tag'] === 'file' && entry.name.startsWith('todo') && entry.name.endsWith('.txt'))
-                    .map(entry => '/' + entry.name);
-                
-                let updated = false;
-                foundFiles.forEach(f => {
-                    if (!knownFiles.includes(f)) {
-                        knownFiles.push(f);
-                        updated = true;
-                    }
-                });
+        // ================================================================
+        // REMOTE SYNC (Dropbox and Google Drive)
+        // Every save uploads the whole file together with the revision it was based on. If another
+        // device saved since, the server refuses it and the two versions are merged line by line.
+        // Unsaved edits stay in pendingWrites (mirrored to localStorage) until they reach the server,
+        // so polling never wipes them and a sign-in redirect doesn't lose them either.
+        // ================================================================
+        const CONFLICT = { conflict: true };
+        const GDRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+        const GDRIVE_API = 'https://www.googleapis.com/drive/v3/';
+        const GDRIVE_UPLOAD = 'https://www.googleapis.com/upload/drive/v3/';
+        const syncState = {};             // "mode:/path" -> { rev, base }; base = text last known to match the server
+        const pendingWrites = new Map();  // "mode:/path" -> full file text not yet on the server
+        let uploading = false, flushing = false, writes = 0;
+        let gToken = null, gConnecting = false;
 
-                if (updated) {
-                    localStorage.setItem('todo_file_registry', JSON.stringify(knownFiles));
-                    updateFileUI();
+        const nowTime = () => new Date().toLocaleTimeString([], {hour12:false});
+        const isRemoteMode = () => syncMode === 'dropbox' || syncMode === 'gdrive';
+        const syncKey = (path, mode = syncMode) => `${mode}:${path}`;
+        const splitKey = key => { const i = key.indexOf(':'); return { mode: key.slice(0, i), path: key.slice(i + 1) }; };
+        const gdriveConfigured = () => !GDRIVE_CLIENT_ID.startsWith('REPLACE_WITH');
+        const gdriveRev = f => f.headRevisionId || f.modifiedTime;
+
+        // Each backend: ready(), list(), download(path) -> {text, rev}, upload(path, text, rev) -> rev, isAuthError(e)
+        // download returns rev null when the file doesn't exist yet; upload throws CONFLICT when rev is stale.
+        const dropboxBackend = {
+            ready: () => !!dbx,
+            isAuthError: e => e.status === 401,
+            async list() {
+                const res = await dbx.filesListFolder({ path: '' });
+                return res.result.entries
+                    .filter(en => en['.tag'] === 'file' && en.name.startsWith('todo') && en.name.endsWith('.txt'))
+                    .map(en => '/' + en.name);
+            },
+            async download(path) {
+                try {
+                    const res = await dbx.filesDownload({ path });
+                    return { text: await res.result.fileBlob.text(), rev: res.result.rev };
+                } catch (e) {
+                    if (e.status === 409) return { text: '', rev: null };   // not created yet
+                    throw e;
                 }
-            } catch (e) {
-                console.error("Scan error:", e);
+            },
+            async upload(path, text, rev) {
+                const mode = rev ? { '.tag': 'update', update: rev } : { '.tag': 'add' };
+                try {
+                    const res = await dbx.filesUpload({ path, contents: text, mode });
+                    return res.result.rev;
+                } catch (e) {
+                    if (e.status === 409) throw CONFLICT;
+                    throw e;
+                }
+            },
+        };
+
+        const gdriveBackend = {
+            ready: () => !!gToken,
+            isAuthError: e => e.status === 401,
+            async list() {
+                const q = `name contains 'todo' and mimeType = 'text/plain' and trashed = false and '${await gdriveFolderId()}' in parents`;
+                const data = await gdriveJson(`${GDRIVE_API}files?q=${encodeURIComponent(q)}&pageSize=200&fields=files(name)`);
+                return data.files.map(f => f.name)
+                    .filter(n => n.startsWith('todo') && n.endsWith('.txt'))
+                    .map(n => '/' + n);
+            },
+            async download(path) {
+                const file = await gdriveFind(path);
+                if (!file) return { text: '', rev: null };
+                const res = await gdriveFetch(`${GDRIVE_API}files/${file.id}?alt=media`);
+                return { text: await res.text(), rev: gdriveRev(file) };
+            },
+            async upload(path, text, rev) {
+                const file = await gdriveFind(path);
+                // Drive has no compare-and-set on writes, so this check is best effort: a write that lands
+                // between the check and the upload is not detected.
+                if (rev ? (!file || gdriveRev(file) !== rev) : !!file) throw CONFLICT;
+                if (!file) return gdriveCreate(path, text);
+                const updated = await gdriveJson(`${GDRIVE_UPLOAD}files/${file.id}?uploadType=media&fields=headRevisionId,modifiedTime`,
+                    { method: 'PATCH', headers: { 'Content-Type': 'text/plain' }, body: text });
+                return gdriveRev(updated);
+            },
+        };
+        const adapters = { dropbox: dropboxBackend, gdrive: gdriveBackend };
+
+        // Each tab writes its own record, so tabs open in the same browser don't overwrite each other's
+        // unsaved edits. The id lives in sessionStorage, so it survives reloads and sign-in redirects.
+        const TAB_ID = (() => {
+            try {
+                let id = sessionStorage.getItem('tab_id');
+                if (!id) { id = Math.random().toString(36).slice(2); sessionStorage.setItem('tab_id', id); }
+                return id;
+            } catch (e) { return Math.random().toString(36).slice(2); }
+        })();
+        const STALE_TAB_MS = 5 * 60 * 1000;
+
+        function persistSync() {
+            try {
+                localStorage.setItem('remote_sync:' + TAB_ID, JSON.stringify({ ts: Date.now(), state: syncState, pending: [...pendingWrites] }));
+            } catch (e) { console.error('Could not save sync state:', e); }
+        }
+
+        function restoreSyncState() {
+            const own = 'remote_sync:' + TAB_ID;
+            try {
+                const saved = JSON.parse(localStorage.getItem(own)) || {};
+                Object.assign(syncState, saved.state || {});
+                (saved.pending || []).forEach(([key, text]) => pendingWrites.set(key, text));
+            } catch (e) { console.error('Could not restore sync state:', e); }
+            // Adopt unsaved edits left behind by tabs that were closed (no heartbeat for a while)
+            const keys = [];
+            for (let i = 0; i < localStorage.length; i++) keys.push(localStorage.key(i));
+            keys.filter(k => k.startsWith('remote_sync:') && k !== own).forEach(k => {
+                try {
+                    const rec = JSON.parse(localStorage.getItem(k));
+                    if (!rec || Date.now() - rec.ts < STALE_TAB_MS) return;
+                    Object.entries(rec.state || {}).forEach(([key, v]) => { if (!syncState[key]) syncState[key] = v; });
+                    (rec.pending || []).forEach(([key, text]) => { if (!pendingWrites.has(key)) pendingWrites.set(key, text); });
+                    localStorage.removeItem(k);
+                } catch (e) { console.error('Could not adopt sync state:', e); }
+            });
+            persistSync();
+            const key = syncKey(currentFile);
+            if (pendingWrites.has(key)) {
+                allTasks = pendingWrites.get(key).split('\n');
+                render();
             }
         }
 
-        async function loadTasksDropbox() {
-            if (!dbx || isSyncing || editingBulk || editingIndex !== null) return;
-            isSyncing = true; setStatus(`Syncing...`, true);
+        // ---- Google Drive helpers ----
+        async function gdriveFetch(url, opts = {}) {
+            // Timeout so a stalled request can't leave the upload flag set forever; it fails and retries on the next poll
+            const res = await fetch(url, { ...opts, signal: AbortSignal.timeout(20000), headers: { ...(opts.headers || {}), Authorization: 'Bearer ' + gToken } });
+            if (!res.ok) { const e = new Error(`Google Drive error ${res.status}`); e.status = res.status; throw e; }
+            return res;
+        }
+        const gdriveJson = async (url, opts) => (await gdriveFetch(url, opts)).json();
+
+        // All sync files live in a "to-do-txt" folder in My Drive. The app creates it on first use and reuses it after.
+        let gFolderId = null;
+        async function gdriveFolderId() {
+            if (gFolderId) return gFolderId;
+            const q = "name = 'to-do-txt' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and 'root' in parents";
+            const found = await gdriveJson(`${GDRIVE_API}files?q=${encodeURIComponent(q)}&fields=files(id)`);
+            if (found.files.length) return (gFolderId = found.files[0].id);
+            const created = await gdriveJson(`${GDRIVE_API}files?fields=id`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: 'to-do-txt', mimeType: 'application/vnd.google-apps.folder' }),
+            });
+            return (gFolderId = created.id);
+        }
+
+        // Only files this app created are visible under drive.file, so lookups are limited to the app's folder
+        async function gdriveFind(path) {
+            const q = `name = '${path.slice(1)}' and mimeType = 'text/plain' and trashed = false and '${await gdriveFolderId()}' in parents`;
+            const data = await gdriveJson(`${GDRIVE_API}files?q=${encodeURIComponent(q)}&fields=files(id,headRevisionId,modifiedTime)`);
+            return data.files[0] || null;
+        }
+
+        async function gdriveCreate(path, text) {
+            const boundary = 'todo' + Math.random().toString(36).slice(2);
+            const body = [
+                `--${boundary}`, 'Content-Type: application/json; charset=UTF-8', '',
+                JSON.stringify({ name: path.slice(1), mimeType: 'text/plain', parents: [await gdriveFolderId()] }),
+                `--${boundary}`, 'Content-Type: text/plain; charset=UTF-8', '',
+                text,
+                `--${boundary}--`,
+            ].join('\r\n');
+            const created = await gdriveJson(`${GDRIVE_UPLOAD}files?uploadType=multipart&fields=headRevisionId,modifiedTime`,
+                { method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body });
+            return gdriveRev(created);
+        }
+
+        function waitForGis() {
+            return new Promise((resolve, reject) => {
+                const started = Date.now();
+                const check = () => {
+                    if (window.google?.accounts?.oauth2) return resolve();
+                    if (Date.now() - started > 10000) return reject(new Error('Google sign-in script did not load'));
+                    setTimeout(check, 200);
+                };
+                check();
+            });
+        }
+
+        function requestGdriveToken(prompt) {
+            return new Promise((resolve, reject) => {
+                const client = google.accounts.oauth2.initTokenClient({
+                    client_id: GDRIVE_CLIENT_ID,
+                    scope: GDRIVE_SCOPE,
+                    callback: resp => (resp.error ? reject(new Error(resp.error)) : resolve(resp.access_token)),
+                    error_callback: err => reject(new Error(err.type || 'popup_failed')),
+                });
+                client.requestAccessToken({ prompt });
+            });
+        }
+
+        // interactive = true only from a button click; silent attempts never open a popup
+        async function connectGdrive(interactive) {
+            if (gToken || gConnecting) return !!gToken;
+            if (!gdriveConfigured()) {
+                setStatus('Google Drive needs a client ID');
+                if (interactive) alert('Google Drive sync needs an OAuth client ID. See "Google Drive setup" in the README.');
+                return false;
+            }
+            gConnecting = true;
             try {
-                const res = await dbx.filesDownload({ path: currentFile });
-                const text = await res.result.fileBlob.text();
-                allTasks = text.split('\n');
-                
+                await waitForGis();
+                gToken = await requestGdriveToken(interactive ? '' : 'none');
+                setStatus('Google Drive connected');
+                return true;
+            } catch (e) {
+                console.error('Google Drive sign-in:', e);
+                setStatus(interactive ? 'Google Drive sign-in failed' : 'Tap Connect Google Drive');
+                return false;
+            } finally {
+                gConnecting = false;
+                updateSyncModeUI();
+            }
+        }
+
+        // ---- shared engine ----
+        async function scanRemoteFiles() {
+            const adapter = adapters[syncMode];
+            if (!adapter?.ready()) return;
+            try {
+                const found = await adapter.list();
+                let updated = false;
+                found.forEach(f => { if (!knownFiles.includes(f)) { knownFiles.push(f); updated = true; } });
+                if (updated) { localStorage.setItem('todo_file_registry', JSON.stringify(knownFiles)); updateFileUI(); }
+            } catch (e) {
+                if (adapter.isAuthError(e)) reauth(syncMode);
+                else console.error('Scan error:', e);
+            }
+        }
+
+        function reauth(mode) {
+            if (mode === 'dropbox') return handleAuthRecovery();
+            gToken = null;
+            updateSyncModeUI();
+            connectGdrive(false);   // silent sign-in first; the Connect button is the fallback
+        }
+
+        async function loadRemote() {
+            const mode = syncMode, adapter = adapters[mode];
+            const path = currentFile, key = syncKey(path);
+            if (!adapter?.ready() || isSyncing || editingBulk || editingIndex !== null || uploading || pendingWrites.has(key)) return;
+            const startWrites = writes;
+            isSyncing = true; setStatus('Syncing...', true);
+            try {
+                const remote = await adapter.download(path);
+                // Drop the result if anything changed while the download was running
+                if (mode !== syncMode || path !== currentFile || uploading || pendingWrites.has(key) || writes !== startWrites) return;
+                syncState[key] = { rev: remote.rev, base: remote.text };
+                persistSync();
+                allTasks = remote.text.split('\n');
                 existingProjects.clear();
                 existingContexts.clear();
                 allTasks.forEach(t => {
                     (t.match(/\+[\w\-]+/g) || []).forEach(p => existingProjects.add(p));
                     (t.match(/@[\w\-]+/g) || []).forEach(c => existingContexts.add(c));
                 });
-
                 render();
-                setStatus(`Synced ${new Date().toLocaleTimeString([], {hour12:false})}`);
-            } catch (e) { 
-                if (e.status === 401 || e.status === 400) {
-                    handleAuthRecovery();
-                } else {
-                    setStatus("Sync Error");
-                }
+                setStatus(`Synced ${nowTime()}`);
+            } catch (e) {
+                if (adapter.isAuthError(e)) reauth(mode);
+                else { console.error('Sync load error:', e); setStatus('Sync Error'); }
             } finally { isSyncing = false; }
         }
 
-        async function saveTasksDropbox() {
-            if (!dbx || !navigator.onLine) return;
-            isSyncing = true; setStatus("Saving...", true);
-            try { 
-                const contents = allTasks.join('\n');
-                await dbx.filesUpload({ path: currentFile, contents: contents, mode: {".tag":"overwrite"} }); 
-                setStatus(`Saved ${new Date().toLocaleTimeString([], {hour12:false})}`); 
-            } catch (e) { 
-                if (e.status === 401 || e.status === 400) {
-                    handleAuthRecovery();
-                } else {
-                    setStatus("Save Error"); 
-                }
-            } finally { isSyncing = false; }
+        // Record the whole current file as unsaved, then push it.
+        function saveRemote() {
+            const key = syncKey(currentFile);
+            // Refuse to save a file that was never loaded from this backend: an empty list could overwrite it
+            if (!syncState[key] && !pendingWrites.has(key)) { setStatus('Not loaded yet, changes not saved'); return; }
+            pendingWrites.set(key, allTasks.join('\n'));
+            persistSync();
+            return flushRemote();
         }
+
+        // Pushes pending files one at a time. A second call while one is running returns at once;
+        // the running loop picks up anything added in the meantime.
+        async function flushRemote() {
+            if (flushing) return;
+            flushing = true;
+            try {
+                let didUpload = true;
+                while (didUpload) {
+                    didUpload = false;
+                    for (const key of [...pendingWrites.keys()]) {
+                        if (!navigator.onLine) { setStatus('Offline, changes pending'); return; }
+                        const { mode, path } = splitKey(key);
+                        if (!adapters[mode]?.ready()) continue;
+                        const text = pendingWrites.get(key);
+                        pendingWrites.delete(key);
+                        const ok = await uploadRemote(mode, path, text);
+                        persistSync();
+                        if (!ok) return;   // stays pending; retried by the poll or when back online
+                        didUpload = true;
+                    }
+                }
+            } finally { flushing = false; }
+        }
+
+        async function uploadRemote(mode, path, text) {
+            const key = syncKey(path, mode), adapter = adapters[mode];
+            const base = syncState[key] || { rev: null, base: '' };
+            uploading = true; setStatus('Saving...', true);
+            try {
+                const rev = await adapter.upload(path, text, base.rev);
+                syncState[key] = { rev, base: text };
+                writes++;
+                if (mode === syncMode && path === currentFile) setStatus(`Saved ${nowTime()}`);
+                return true;
+            } catch (e) {
+                let err = e;
+                if (e === CONFLICT) {
+                    try { await mergeRemote(mode, path, text, base.base); return true; }
+                    catch (mergeErr) { err = mergeErr; }
+                }
+                if (!pendingWrites.has(key)) pendingWrites.set(key, text);
+                if (adapter.isAuthError(err)) reauth(mode);
+                else {
+                    console.error('Save error:', err);
+                    setStatus(navigator.onLine ? 'Save failed, will retry' : 'Offline, changes pending');
+                }
+                return false;
+            } finally { uploading = false; }
+        }
+
+        // Another device saved first: rebuild the file from its latest text plus this device's edits
+        async function mergeRemote(mode, path, sentText, base) {
+            const key = syncKey(path, mode);
+            const remote = await adapters[mode].download(path);
+            const local = pendingWrites.has(key) ? pendingWrites.get(key) : sentText;
+            const merged = mergeLines(base.split('\n'), local.split('\n'), remote.text.split('\n'));
+            syncState[key] = { rev: remote.rev, base: remote.text };
+            pendingWrites.set(key, merged.join('\n'));
+            if (mode === syncMode && path === currentFile) {
+                allTasks = merged;
+                render();
+                setStatus('Merged changes from another device');
+            }
+        }
+
+        // Line-level three-way merge. base = last text both sides agreed on, local = this device, remote = server.
+        // Lines this device removed are taken out of the remote text; lines it added are appended if the
+        // remote doesn't already have them. Position within the file is not preserved for added lines.
+        function mergeLines(base, local, remote) {
+            const tally = lines => lines.reduce((m, l) => m.set(l, (m.get(l) || 0) + 1), new Map());
+            const B = tally(base), L = tally(local);
+            const toRemove = new Map();
+            for (const [l, n] of B) {
+                const d = n - (L.get(l) || 0);
+                if (d > 0) toRemove.set(l, d);
+            }
+            const out = [];
+            for (const l of remote) {
+                const r = toRemove.get(l) || 0;
+                if (r > 0) toRemove.set(l, r - 1);
+                else out.push(l);
+            }
+            const have = tally(out);
+            for (const [l, n] of L) {
+                const added = n - (B.get(l) || 0);
+                const missing = added - (have.get(l) || 0);
+                for (let i = 0; i < missing; i++) out.push(l);
+            }
+            return out;
+        }
+        window.mergeLines = mergeLines;
 
         function handleAuthRecovery() {
             setStatus("Session Expired - Reauthenticating...");
