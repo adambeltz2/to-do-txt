@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here. Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [4.8.0] - 2026-10-05
+
+### Added
+- **Help guide:** a **?** button next to the theme toggle opens a guide to the task format: adding tasks, priorities, projects and contexts, due dates, finishing and editing tasks, links, lists, and saving. Closes with the ✕ button, Escape, or a click outside.
+
 ## [4.7.0] - 2026-10-05
 
 ### Added
