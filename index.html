@@ -6,7 +6,7 @@
     (function() {
         try {
             var stored = localStorage.getItem('theme');
-            var theme = stored || ((window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) ? 'light' : 'dark');
+            var theme = stored || 'light';
             if (theme === 'light') document.documentElement.classList.add('light');
         } catch (e) { /* localStorage unavailable; default to dark */ }
     })();
@@ -41,8 +41,8 @@
         .app-grid { display: grid; grid-template-columns: 280px 1fr; flex: 1; overflow: hidden; }
         @media (max-width: 768px) { 
             .app-grid { grid-template-columns: 1fr; } 
-            #sidebar { position: fixed; top: 0; left: 0; bottom: 0; z-index: 1000; width: 280px; box-shadow: 20px 0 50px rgba(0,0,0,0.8); display: flex; flex-direction: column; transform: translateX(-100%); transition: transform 0.2s ease; }
-            #sidebar.sidebar-open { transform: translateX(0); }
+            #sidebar { position: fixed; top: 0; left: 0; bottom: 0; z-index: 1000; width: 280px; display: flex; flex-direction: column; transform: translateX(-100%); transition: transform 0.2s ease; }
+            #sidebar.sidebar-open { transform: translateX(0); box-shadow: 20px 0 50px rgba(0,0,0,0.25); }
         }
         .file-active { border-left: 4px solid #3b82f6; background: rgba(59, 130, 246, 0.1); font-weight: 900; color: #3b82f6; }
         .h1-style { font-size: 1.1rem; font-weight: 900; color: #3b82f6; border-bottom: 2px solid #3b82f6; margin: 1.5rem 0 0.5rem 0; text-transform: uppercase; }
@@ -59,6 +59,8 @@
         details[open] summary { color: #60a5fa; margin-bottom: 0.5rem; }
         .btn-toggle { font-size: 10px; font-weight: 900; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--border); text-transform: uppercase; transition: all 0.2s; }
         .btn-toggle.active { background: #3b82f6; border-color: #3b82f6; color: white; }
+        .sync-icon-btn { display: flex; align-items: center; justify-content: center; padding: 8px 4px; min-height: 40px; }
+        .sync-icon-btn.active img { filter: brightness(0) invert(1); }
         .btn-toggle:disabled { opacity: 0.3; cursor: not-allowed; }
         .theme-toggle-btn { width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-input); font-size: 13px; cursor: pointer; transition: all 0.15s; }
         .theme-toggle-btn:hover { border-color: #3b82f6; }
@@ -135,51 +137,65 @@
 </head>
 <body class="font-sans">
 
-    <header class="p-4 md:p-6 card-bg border-b shadow-lg relative z-50">
-        <div class="max-w-6xl mx-auto flex flex-col gap-4">
-            <div class="flex items-center justify-between">
-                <div class="flex items-center gap-4">
-                    <button onclick="toggleSidebar()" class="md:hidden text-muted text-xl p-1">☰</button>
-                    <div class="font-black text-2xl text-blue-500 tracking-tighter cursor-pointer" onclick="resetFilters()">to-do-txt</div>
-                    <div class="flex items-center gap-2 px-3 py-1 bg-black/20 rounded-full border border-white/5">
-                        <div id="syncIndicator" class="w-2 h-2 rounded-full bg-gray-600"></div>
-                        <span id="statusText" class="text-[9px] font-bold uppercase tracking-widest opacity-60 text-gray-400">Ready</span>
-                    </div>
-                    <button onclick="toggleTheme()" id="themeToggleBtn" class="theme-toggle-btn" title="Toggle light/dark mode">🌙</button>
+    <header class="px-4 py-3 md:px-6 card-bg border-b shadow-sm relative z-50">
+        <div class="max-w-6xl mx-auto flex flex-col gap-3">
+            <div class="flex items-center gap-3">
+                <button onclick="toggleSidebar()" class="md:hidden text-muted text-xl px-1" aria-label="Open files">☰</button>
+                <div class="font-black text-xl md:text-2xl text-blue-500 tracking-tighter cursor-pointer whitespace-nowrap" onclick="resetFilters()">to-do-txt</div>
+                <div class="flex items-center gap-2 px-2.5 py-1 rounded-full border card-bg" title="Sync status">
+                    <div id="syncIndicator" class="w-2 h-2 rounded-full bg-gray-600"></div>
+                    <span id="statusText" class="hidden sm:inline text-[10px] font-bold uppercase tracking-widest opacity-60 text-gray-400 whitespace-nowrap">Ready</span>
                 </div>
-                <div class="flex items-center gap-4">
-                    <span id="activeFileNameDisplay" class="hidden md:block text-[10px] font-black text-blue-400 border border-blue-500/30 px-2 py-1 rounded bg-blue-500/5 uppercase"></span>
-                    <span id="viewCounter" class="text-[10px] font-bold uppercase tracking-widest text-blue-400/60">0/0</span>
-                    <button onclick="toggleSortDirection()" id="sortDirBtn" class="bg-[#262626] text-white border border-gray-700 rounded px-3 py-1 text-[10px] font-bold uppercase">▲ ASC</button>
-                    <select id="sortOrder" onchange="render()" class="bg-[#262626] text-white border border-gray-700 rounded-lg px-3 py-1 text-[10px] font-bold uppercase outline-none cursor-pointer">
-                        <option value="file">File Order</option>
-                        <option value="prio">Priority</option>
-                        <option value="due">Due Date</option>
-                        <option value="created">Created Date</option>
-                        <option value="completed">Completed Date</option>
-                    </select>
+                <span id="activeFileNameDisplay" class="hidden md:block text-[10px] font-black text-blue-400 border border-blue-500/30 px-2 py-1 rounded bg-blue-500/5 uppercase"></span>
+                <div class="flex-1"></div>
+                <button onclick="toggleTheme()" id="themeToggleBtn" class="theme-toggle-btn" title="Toggle light/dark mode">🌙</button>
+                <div class="relative">
+                    <button onclick="toggleViewMenu(event)" id="viewMenuBtn" class="btn-toggle" aria-haspopup="true" aria-expanded="false">View ▾</button>
+                    <div id="viewMenu" class="hidden absolute right-0 top-full mt-2 w-72 card-bg border rounded-xl shadow-xl z-[200] p-4 space-y-4">
+                        <div>
+                            <div class="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-2">Sort</div>
+                            <div class="flex gap-2">
+                                <button onclick="toggleSortDirection()" id="sortDirBtn" class="btn-toggle active px-3 py-2">▲ ASC</button>
+                                <select id="sortOrder" onchange="render()" class="flex-1 min-w-0 input-bg border rounded-lg px-3 py-2 text-xs font-bold uppercase outline-none cursor-pointer">
+                                    <option value="file">File Order</option>
+                                    <option value="prio">Priority</option>
+                                    <option value="due">Due Date</option>
+                                    <option value="created">Created Date</option>
+                                    <option value="completed">Completed Date</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-2">Show</div>
+                            <div class="flex flex-wrap gap-2">
+                                <button onclick="cycleCompletedFilter()" id="toggleCompBtn" class="btn-toggle active px-3 py-2">Completed: Show All</button>
+                                <button onclick="toggleHeaders()" id="toggleHeadBtn" class="btn-toggle active px-3 py-2">Headers</button>
+                                <button onclick="toggleAddToTop()" id="toggleTopBtn" class="btn-toggle px-3 py-2">Add to Top</button>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="text-[9px] font-black uppercase tracking-widest text-gray-500 mb-2">Tools</div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button onclick="sweepCompletedToBottom(); closeViewMenu()" class="btn-toggle px-3 py-2 text-left">Sweep Done</button>
+                                <button onclick="toggleBulkEdit(); closeViewMenu()" class="btn-toggle px-3 py-2 text-left">Bulk Edit</button>
+                                <button onclick="exportFile(); closeViewMenu()" class="btn-toggle px-3 py-2 text-left">Backup</button>
+                                <!-- Triggers browser native print dialog directly -->
+                                <button onclick="window.print(); closeViewMenu()" class="btn-toggle px-3 py-2 text-left">Print List</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="flex flex-col md:flex-row gap-3">
-                <input type="text" id="searchInput" oninput="render()" placeholder="Search..." class="flex-1 input-bg border rounded-lg px-4 py-2 text-sm outline-none focus:border-blue-500">
-                <div class="relative flex-[2] flex flex-col">
+            <div class="flex items-start gap-2">
+                <input type="text" id="searchInput" oninput="render()" placeholder="Search" class="w-28 sm:w-48 shrink-0 input-bg border rounded-lg px-3 py-2 text-sm outline-none focus:border-blue-500">
+                <div class="relative flex-1 min-w-0 flex flex-col">
                     <div class="flex gap-2">
-                        <input type="text" id="newTodo" autocomplete="off" oninput="handleInputAutocomplete(this, 'autocompleteDropdown')" onkeydown="handleInputKeyDown(event)" placeholder="What needs to be done? (e.g. (A) Call mom due:tomorrow)" class="flex-1 input-bg border rounded-lg px-4 py-2 text-sm outline-none focus:border-blue-500">
-                        <button onclick="addTask()" class="bg-blue-600 px-6 py-2 rounded-lg font-bold text-sm text-white">Add</button>
+                        <input type="text" id="newTodo" autocomplete="off" oninput="handleInputAutocomplete(this, 'autocompleteDropdown')" onkeydown="handleInputKeyDown(event)" placeholder="Add a task…" class="flex-1 min-w-0 input-bg border rounded-lg px-4 py-2 text-sm outline-none focus:border-blue-500">
+                        <button onclick="addTask()" class="bg-blue-600 hover:bg-blue-700 px-5 py-2 rounded-lg font-bold text-sm text-white transition-colors">Add</button>
                     </div>
                     <div id="autocompleteDropdown" class="hidden absolute left-0 right-0 top-full mt-1 card-bg border rounded-lg shadow-xl max-h-48 overflow-y-auto z-[200] p-1 space-y-0.5"></div>
                 </div>
-            </div>
-            <div class="flex flex-wrap items-center gap-2 pt-2 border-t border-white/5">
-                <button onclick="cycleCompletedFilter()" id="toggleCompBtn" class="btn-toggle active">Completed: Show All</button>
-                <button onclick="toggleHeaders()" id="toggleHeadBtn" class="btn-toggle active">Headers</button>
-                <button onclick="toggleAddToTop()" id="toggleTopBtn" class="btn-toggle">Add to Top</button>
-                <button onclick="sweepCompletedToBottom()" class="btn-toggle hover:bg-white/5 border border-blue-500/30 text-blue-400">Sweep Done</button>
-                <div class="h-4 w-[1px] bg-white/10 mx-1"></div>
-                <button onclick="toggleBulkEdit()" class="btn-toggle hover:bg-white/5">Bulk Edit</button>
-                <button onclick="exportFile()" class="btn-toggle hover:bg-white/5">Backup</button>
-                <!-- Triggers browser native print dialog directly -->
-                <button onclick="window.print()" class="btn-toggle hover:bg-white/5">Print List</button>
+                <span id="viewCounter" class="hidden sm:block self-center text-[10px] font-bold uppercase tracking-widest text-blue-400/70 whitespace-nowrap pl-1">0/0</span>
             </div>
         </div>
     </header>
@@ -194,9 +210,9 @@
                 <section>
                     <h2 class="text-[10px] font-black text-gray-500 mb-4 uppercase tracking-widest">Sync</h2>
                     <div class="flex gap-1 mb-2">
-                        <button onclick="setSyncMode('dropbox')" id="modeBtnDropbox" class="flex-1 btn-toggle">Dropbox</button>
-                        <button onclick="setSyncMode('gdrive')" id="modeBtnGdrive" class="flex-1 btn-toggle">Google Drive</button>
-                        <button onclick="setSyncMode('local')" id="modeBtnLocal" class="flex-1 btn-toggle" title="Chrome/Edge only">Local Folder</button>
+                        <button onclick="setSyncMode('dropbox')" id="modeBtnDropbox" class="flex-1 btn-toggle sync-icon-btn" title="Dropbox" aria-label="Dropbox"><img src="assets/dropbox.svg" alt="" class="h-4"></button>
+                        <button onclick="setSyncMode('gdrive')" id="modeBtnGdrive" class="flex-1 btn-toggle sync-icon-btn" title="Google Drive" aria-label="Google Drive"><img src="assets/google-drive.svg" alt="" class="h-4"></button>
+                        <button onclick="setSyncMode('local')" id="modeBtnLocal" class="flex-1 btn-toggle sync-icon-btn" title="Local folder (Chrome/Edge only)" aria-label="Local folder">Local</button>
                     </div>
                     <button onclick="connectLocalFolder()" id="connectLocalBtn" class="hidden w-full text-[10px] font-black bg-blue-600/10 border border-blue-500/30 text-blue-400 py-2 rounded uppercase hover:bg-blue-600/20 transition-all mb-1">Connect Folder</button>
                     <button onclick="disconnectLocal()" id="disconnectLocalBtn" class="hidden w-full text-[10px] font-black border border-red-900/50 text-red-500 py-2 rounded uppercase">Disconnect Folder</button>
@@ -291,6 +307,7 @@
             updateSyncModeUI();
 
             document.addEventListener('click', (e) => {
+                if (!e.target.closest('#viewMenu')) closeViewMenu();
                 if (e.target.id !== 'newTodo' && e.target.id !== 'inlineEditInput') {
                     hideAutocomplete('autocompleteDropdown');
                     hideAutocomplete('inlineAutocompleteDropdown');
@@ -1446,6 +1463,17 @@
             const a = document.createElement('a');
             a.href = url; a.download = `todo_backup_${new Date().toISOString().split('T')[0]}.txt`;
             a.click(); URL.revokeObjectURL(url);
+        }
+
+        function toggleViewMenu(e) {
+            e.stopPropagation();
+            const menu = document.getElementById('viewMenu');
+            const open = menu.classList.toggle('hidden') === false;
+            document.getElementById('viewMenuBtn').setAttribute('aria-expanded', open);
+        }
+        function closeViewMenu() {
+            document.getElementById('viewMenu').classList.add('hidden');
+            document.getElementById('viewMenuBtn').setAttribute('aria-expanded', 'false');
         }
 
         function toggleSidebar() { document.getElementById('sidebar').classList.toggle('sidebar-open'); }
