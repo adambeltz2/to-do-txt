@@ -131,6 +131,7 @@
 
             /* Hide interactive UI elements from the list */
             button { display: none !important; }
+            #helpModal { display: none !important; }
             input[type="checkbox"] { appearance: auto !important; } /* Force standard checkboxes */
         }
     </style>
@@ -149,6 +150,7 @@
                 <span id="activeFileNameDisplay" class="hidden md:block text-[10px] font-black text-blue-400 border border-blue-500/30 px-2 py-1 rounded bg-blue-500/5 uppercase"></span>
                 <div class="flex-1"></div>
                 <button onclick="toggleTheme()" id="themeToggleBtn" class="theme-toggle-btn" title="Toggle light/dark mode">🌙</button>
+                <button onclick="openHelp()" class="theme-toggle-btn font-black text-[11px]" title="How to use to-do-txt" aria-label="How to use to-do-txt">?</button>
                 <div class="relative">
                     <button onclick="toggleViewMenu(event)" id="viewMenuBtn" class="btn-toggle" aria-haspopup="true" aria-expanded="false">View ▾</button>
                     <div id="viewMenu" class="hidden absolute right-0 top-full mt-2 w-72 card-bg border rounded-xl shadow-xl z-[200] p-4 space-y-4">
@@ -267,6 +269,66 @@
         </main>
     </div>
 
+    <!-- Help guide -->
+    <div id="helpModal" class="hidden fixed inset-0 z-[1500] bg-black/50 flex items-center justify-center p-4" onclick="if (event.target === this) closeHelp()" role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+        <div class="card-bg border rounded-xl shadow-2xl w-full max-w-xl max-h-[85vh] flex flex-col">
+            <div class="flex items-center justify-between px-6 py-4 border-b">
+                <h2 id="helpTitle" class="font-black text-lg text-blue-500 tracking-tight">How to use to-do-txt</h2>
+                <button onclick="closeHelp()" class="text-muted text-xl px-2" aria-label="Close">✕</button>
+            </div>
+            <div class="overflow-y-auto px-6 py-4 space-y-5 text-sm leading-relaxed">
+                <p class="text-muted">Your list is a plain text file. Each line is one task. Everything below is optional: use only what you need.</p>
+
+                <section>
+                    <h3 class="h2-style">Adding a task</h3>
+                    <p>Type in the bar at the top and press <b>Enter</b> or <b>Add</b>. Today's date is stored automatically, unless the task starts with a priority.</p>
+                    <p class="font-mono text-xs bg-black/5 rounded p-2 mt-2">Call mom due:tomorrow +family @phone</p>
+                </section>
+
+                <section>
+                    <h3 class="h2-style">Priority</h3>
+                    <p>Put <b>(A)</b>, <b>(B)</b> or <b>(C)</b> at the start of a line. <b>(A)</b> is the most urgent. Sort by <b>Priority</b> in the View menu to see them first.</p>
+                </section>
+
+                <section>
+                    <h3 class="h2-style">Projects and contexts</h3>
+                    <p><b>Projects</b> start with <b>+</b> and group tasks by what they belong to, like a house or a job: <span class="font-mono">+home</span>, <span class="font-mono">+work</span>.</p>
+                    <p class="mt-2"><b>Contexts</b> start with <b>@</b> and describe where or how you can do a task, like a place or a tool: <span class="font-mono">@phone</span>, <span class="font-mono">@errands</span>.</p>
+                    <p class="mt-2">Click any project or context in the sidebar to show only those tasks.</p>
+                </section>
+
+                <section>
+                    <h3 class="h2-style">Due dates</h3>
+                    <p>Add <b>due:</b> followed by a date or a shortcut:</p>
+                    <ul class="list-disc pl-5 mt-2 space-y-1">
+                        <li><span class="font-mono">due:2026-10-15</span> a specific date</li>
+                        <li><span class="font-mono">due:today</span> or <span class="font-mono">due:tomorrow</span></li>
+                        <li><span class="font-mono">due:friday</span> the next Friday</li>
+                        <li><span class="font-mono">due:3d</span> three days from today, <span class="font-mono">due:2w</span> two weeks from today</li>
+                    </ul>
+                    <p class="mt-2">Due dates feed the <b>Date Dashboard</b> in the sidebar: Overdue, Today, Upcoming and No Due Date.</p>
+                </section>
+
+                <section>
+                    <h3 class="h2-style">Working with tasks</h3>
+                    <ul class="list-disc pl-5 space-y-1">
+                        <li><b>Finish a task:</b> tick its checkbox. It's marked done with the date you finished it.</li>
+                        <li><b>Edit a task:</b> click its text. Press <b>Tab</b> to complete a +project or @context while typing.</li>
+                        <li><b>Clean up:</b> <b>Sweep Done</b> (View menu) moves finished tasks to the bottom of the list.</li>
+                        <li><b>Links:</b> write <span class="font-mono">link:example.com</span> and it shows as a clickable link.</li>
+                        <li><b>Bulk edit:</b> View menu → <b>Bulk Edit</b> edits the whole file as plain text.</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h3 class="h2-style">Lists and saving</h3>
+                    <p>Each <span class="font-mono">todo_NAME.txt</span> file is a separate list. Manage them under <b>File Manager</b> in the sidebar.</p>
+                    <p class="mt-2">Pick where your list is saved with the icons in the sidebar: <b>Dropbox</b>, <b>Google Drive</b> or a <b>Local</b> folder. The status line under the title shows <i>Saving</i>, <i>Saved</i> or <i>Offline</i>.</p>
+                </section>
+            </div>
+        </div>
+    </div>
+
     <script>
         const CLIENT_ID = 'aqxrpwdf3f2l9hx';
         const REDIRECT_URI = 'https://to-do-txt.github.io/to-do-txt/';
@@ -313,6 +375,7 @@
                     hideAutocomplete('inlineAutocompleteDropdown');
                 }
             });
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeHelp(); });
             // Retry unsaved changes and pick up other devices' edits when the connection or tab comes back
             window.addEventListener('online', () => { if (isRemoteMode()) { flushRemote(); loadRemote(); } });
             document.addEventListener('visibilitychange', () => { if (!document.hidden && isRemoteMode()) loadRemote(); });
@@ -1471,6 +1534,8 @@
             const open = menu.classList.toggle('hidden') === false;
             document.getElementById('viewMenuBtn').setAttribute('aria-expanded', open);
         }
+        function openHelp() { document.getElementById('helpModal').classList.remove('hidden'); }
+        function closeHelp() { document.getElementById('helpModal').classList.add('hidden'); }
         function closeViewMenu() {
             document.getElementById('viewMenu').classList.add('hidden');
             document.getElementById('viewMenuBtn').setAttribute('aria-expanded', 'false');
